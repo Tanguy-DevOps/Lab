@@ -1,0 +1,11 @@
+# .gitignore
+*.tfstate
+*.tfstate.backup
+.terraform/
+terraform.tfvars
+*.auto.tfvars
+*.auto.tfvars.json
+.env
+inventory/hosts.ini
+
+.terraform-cache/

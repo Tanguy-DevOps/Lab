@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tanguy Bonnet | En construction</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0; padding: 0; display: flex; justify-content: center;
+            align-items: center; height: 100vh;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white; font-family: 'Inter', sans-serif; text-align: center;
+        }
+        .container { max-width: 600px; padding: 20px; }
+        h1 {
+            font-size: 3rem; margin-bottom: 10px;
+            background: linear-gradient(to right, #4facfe 0%, #00f2fe 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+
+            word-wrap: break-word;       /* Coupe le mot si nécessaire */
+            overflow-wrap: break-word;   /* Standard moderne pour la même chose */
+            font-size: clamp(1.8rem, 8vw, 3rem); /* Taille adaptative : min 1.8rem, max 3rem */
+        }
+        .loader {
+            width: 50px; height: 50px; border: 3px solid rgba(255,255,255,0.1);
+            border-radius: 50%; border-top-color: #4facfe;
+            animation: spin 1s ease-in-out infinite; margin: 30px auto;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>{{ public_domain }}</h1>
+        <div class="loader"></div>
+        <p>Ce serveur est en cours de configuration via <strong>Terraform/Ansible</strong>.</p>
+    </div>
+</body>
+</html>

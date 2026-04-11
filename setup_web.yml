@@ -1,0 +1,244 @@
+---
+- name: Configuration du serveur web
+  hosts: webservers
+  become: true
+
+  tasks:
+
+    - name: Attendre que le serveur soit prêt
+      wait_for_connection:
+        delay: 10
+        timeout: 120
+
+    - name: Vérifier que cloud-init a fini
+      command: cloud-init status --wait
+      changed_when: false
+
+    # ─────────────────────────────────────────────────────────────
+    # 1. DÉPENDANCES SYSTÈME
+    # ─────────────────────────────────────────────────────────────
+    - name: Mise à jour et installation des dépendances
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - python3-pip
+          - certbot
+          - python3-docker
+        state: present
+        update_cache: yes
+
+    # ─────────────────────────────────────────────────────────────
+    # 2. INSTALLATION DOCKER ENGINE
+    # ─────────────────────────────────────────────────────────────
+
+    - name: Création du dossier keyrings
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Ajout de la clé GPG Docker (méthode moderne)
+      get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+        force: false
+
+    - name: Ajout du dépôt Docker
+      apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_facts['distribution_release'] }} stable"
+        state: present
+        filename: docker
+
+    - name: Installation de Docker
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+        update_cache: yes
+
+    - name: Activation et démarrage du service Docker
+      systemd:
+        name: docker
+        enabled: yes
+        state: started
+
+    # ─────────────────────────────────────────────────────────────
+    # 3. GÉNÉRATION DU CERTIFICAT SSL
+    # ─────────────────────────────────────────────────────────────
+
+    - name: Vérifier si le certificat existe déjà
+      stat:
+        path: "/etc/letsencrypt/live/{{ public_domain }}/fullchain.pem"
+      register: cert_fullchain
+
+    - name: Arrêt du conteneur Nginx si existant (libère le port 80 pour Certbot)
+      command: docker stop site-tanguy
+      register: stop_result
+      failed_when: false
+      changed_when: stop_result.rc == 0
+      when: not cert_fullchain.stat.exists
+
+    - name: Vérifier que les variables de certificat sont définies
+      assert:
+        that:
+          - public_domain | length > 0
+          - public_www_domain | length > 0
+          - certbot_email | length > 0
+        fail_msg: "public_domain, public_www_domain et certbot_email doivent etre definis dans l'inventaire."
+
+    - name: Génération du certificat SSL Let's Encrypt
+      command: >
+        certbot certonly --standalone
+        -d {{ public_domain }} -d {{ public_www_domain }}
+        --non-interactive --agree-tos --email {{ certbot_email }}
+        {{ '--test-cert' if (certbot_staging | default(false) | bool) else '' }}
+      register: certbot_log
+      failed_when: certbot_log.rc != 0 and 'already exists' not in certbot_log.stderr
+      when: not cert_fullchain.stat.exists
+
+    - name: Expliquer le blocage Let’s Encrypt en cas de rate limit
+      fail:
+        msg: >-
+          Let’s Encrypt a refuse un nouveau certificat de production pour
+          {{ public_domain }} / {{ public_www_domain }} a cause d'une rate limit.
+          Attends la fenetre indiquee dans l'erreur ou active certbot_staging=true
+          dans terraform.tfvars pour utiliser l'environnement de test.
+      when:
+        - not cert_fullchain.stat.exists
+        - certbot_log is failed
+        - certbot_log.stderr is defined
+        - "'too many certificates' in certbot_log.stderr"
+
+    - name: Installer le hook pre-renew Certbot
+      copy:
+        dest: /usr/local/bin/certbot-pre-hook.sh
+        owner: root
+        group: root
+        mode: "0755"
+        content: |
+          #!/bin/bash
+          set -euo pipefail
+
+          if docker ps --format '{% raw %}{{.Names}}{% endraw %}' | grep -qx 'site-tanguy'; then
+            docker stop site-tanguy
+          fi
+
+    - name: Installer le hook post-renew Certbot
+      copy:
+        dest: /usr/local/bin/certbot-post-hook.sh
+        owner: root
+        group: root
+        mode: "0755"
+        content: |
+          #!/bin/bash
+          set -euo pipefail
+
+          if docker ps -a --format '{% raw %}{{.Names}}{% endraw %}' | grep -qx 'site-tanguy'; then
+            if docker ps --format '{% raw %}{{.Names}}{% endraw %}' | grep -qx 'site-tanguy'; then
+              docker kill --signal HUP site-tanguy
+            else
+              docker start site-tanguy
+            fi
+          fi
+
+    - name: Cron de renouvellement automatique Let's Encrypt (2x/jour)
+      cron:
+        name: "Certbot renew"
+        minute: "0"
+        hour: "3,15"
+        job: >
+          certbot renew --quiet
+          --pre-hook /usr/local/bin/certbot-pre-hook.sh
+          --post-hook /usr/local/bin/certbot-post-hook.sh
+        user: root
+        state: present
+
+    # ─────────────────────────────────────────────────────────────
+    # 4. CONFIGURATION DES FICHIERS DU SITE ET NGINX
+    # ─────────────────────────────────────────────────────────────
+
+    - name: Création des dossiers du projet
+      file:
+        path: "/home/{{ ansible_user }}/mon-site/{{ item }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0755"
+      loop:
+        - html
+        - config
+
+    - name: Déploiement de l'index.html (Template)
+      template:
+        src: templates/index.html.j2
+        dest: "/home/{{ ansible_user }}/mon-site/html/index.html"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0644"
+
+    - name: Déploiement de la configuration Nginx SSL
+      copy:
+        dest: "/home/{{ ansible_user }}/mon-site/config/nginx.conf"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0644"
+        content: |
+          # Redirection HTTP → HTTPS
+          server {
+              listen 80;
+              server_name {{ public_domain }} {{ public_www_domain }};
+              return 301 https://$host$request_uri;
+          }
+
+          server {
+              listen 443 ssl;
+              server_name {{ public_domain }} {{ public_www_domain }};
+
+              ssl_certificate     /etc/letsencrypt/live/{{ public_domain }}/fullchain.pem;
+              ssl_certificate_key /etc/letsencrypt/live/{{ public_domain }}/privkey.pem;
+
+              ssl_protocols       TLSv1.2 TLSv1.3;
+              ssl_ciphers         HIGH:!aNULL:!MD5;
+              ssl_prefer_server_ciphers on;
+
+              add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+              add_header X-Content-Type-Options nosniff;
+              add_header X-Frame-Options DENY;
+
+              location / {
+                  root  /usr/share/nginx/html;
+                  index index.html;
+              }
+          }
+
+    # ─────────────────────────────────────────────────────────────
+    # 5. LANCEMENT DU CONTENEUR NGINX
+    # ─────────────────────────────────────────────────────────────
+
+    - name: Lancement du conteneur Nginx
+      community.docker.docker_container:
+        name: site-tanguy
+        image: nginx:alpine
+        state: started
+        restart_policy: always
+        recreate: yes
+        published_ports:
+          - "80:80"
+          - "443:443"
+        volumes:
+          - /home/{{ ansible_user }}/mon-site/html:/usr/share/nginx/html:ro
+          - /home/{{ ansible_user }}/mon-site/config/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+          - /etc/letsencrypt:/etc/letsencrypt:ro
+        healthcheck:
+          test: ["CMD", "wget", "-qO-", "http://localhost/"]
+          interval: 30s
+          timeout: 5s
+          retries: 3
+          start_period: 10s

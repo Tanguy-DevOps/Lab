@@ -1,0 +1,17 @@
+MY_TOKEN             = "hcloud_token_here"
+MY_SSH_KEY           = "ssh-ed***** AAAA..."
+CLOUDFLARE_API_TOKEN = "cloudflare_api_token_here"
+CLOUDFLARE_ZONE_ID   = "cloudflare_zone_id_here"
+
+domain_name     = "example.com"
+certbot_email   = "ops@example.com"
+certbot_staging = false
+
+server_name     = "name-of-server-here"
+server_type     = "type-of-server-here"
+server_location = "location-of-server-here"
+admin_user      = "name-of-admin-user-here"
+ssh_port        = 22 # or custom port here
+ssh_allowed_cidrs = [
+  "0.0.0.0/32", # your public IP here
+]

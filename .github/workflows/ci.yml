@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+      - "feature/**"
+      - "infra/**"
+      - "fix/**"
+      - "docs/**"
+  pull_request:
+
+jobs:
+  validate:
+    name: Validate Terraform, Ansible and Shell
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.14.8
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ansible
+        run: pip install ansible-core
+
+      - name: Prepare Terraform variable file for validation
+        run: cp terraform.tfvars.example terraform.tfvars
+
+      - name: Terraform format
+        run: terraform fmt -check
+
+      - name: Terraform init
+        run: terraform init -backend=false
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r requirements.yml
+
+      - name: Ansible syntax check
+        run: ansible-playbook --syntax-check setup_web.yml
+
+      - name: Shell syntax check
+        run: |
+          bash -n deploy.sh
+          bash -n destroy.sh

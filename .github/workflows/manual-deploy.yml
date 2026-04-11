@@ -1,0 +1,113 @@
+name: Manual Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_apply:
+        description: "Type APPLY to confirm the deployment"
+        required: true
+        type: string
+      certbot_staging:
+        description: "Use Let's Encrypt staging certificates"
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  deploy:
+    name: Deploy Infrastructure and Configure Server
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm_apply == 'APPLY'
+    environment: production
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.14.8
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ansible
+        run: pip install ansible-core
+
+      - name: Install system tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y netcat-openbsd
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r requirements.yml
+
+      - name: Configure SSH key
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Write Terraform variables
+        run: |
+          cat > terraform.tfvars <<EOF
+          MY_TOKEN             = "${{ secrets.HCLOUD_TOKEN }}"
+          MY_SSH_KEY           = "${{ secrets.HCLOUD_SSH_PUBLIC_KEY }}"
+          CLOUDFLARE_API_TOKEN = "${{ secrets.CLOUDFLARE_API_TOKEN }}"
+          CLOUDFLARE_ZONE_ID   = "${{ secrets.CLOUDFLARE_ZONE_ID }}"
+
+          domain_name     = "${{ secrets.DOMAIN_NAME }}"
+          certbot_email   = "${{ secrets.CERTBOT_EMAIL }}"
+          certbot_staging = ${{ github.event.inputs.certbot_staging }}
+
+          server_name     = "${{ secrets.SERVER_NAME }}"
+          server_type     = "${{ secrets.SERVER_TYPE }}"
+          server_location = "${{ secrets.SERVER_LOCATION }}"
+          admin_user      = "${{ secrets.ADMIN_USER }}"
+          ssh_port        = ${{ secrets.SSH_PORT }}
+          ssh_allowed_cidrs = [
+            "${{ secrets.SSH_ALLOWED_CIDR }}",
+          ]
+          EOF
+          chmod 600 terraform.tfvars
+
+      - name: Terraform format
+        run: terraform fmt -check
+
+      - name: Terraform init
+        run: terraform init
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform apply
+        run: terraform apply -auto-approve
+
+      - name: Show generated inventory
+        run: cat inventory/hosts.ini
+
+      - name: Add host keys to known_hosts
+        run: |
+          SERVER_IP=$(terraform output -raw server_ip)
+          SSH_PORT=$(awk -F= '/^ansible_port=/{print $2}' inventory/hosts.ini)
+          SSH_HOST=$(awk 'NR==2 {print $1}' inventory/hosts.ini)
+
+          timeout 60 bash -c "until nc -z $SERVER_IP $SSH_PORT; do sleep 2; done"
+          ssh-keyscan -p "$SSH_PORT" -H "$SERVER_IP" >> ~/.ssh/known_hosts
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Ansible syntax check
+        run: ansible-playbook --syntax-check setup_web.yml
+
+      - name: Run Ansible playbook
+        run: ansible-playbook setup_web.yml
+
+      - name: Deployment summary
+        run: |
+          echo "Deployment completed."
+          echo "Server IP: $(terraform output -raw server_ip)"
+          echo "Hostname: $(terraform output -raw hostname)"
