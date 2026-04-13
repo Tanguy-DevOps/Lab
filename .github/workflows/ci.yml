@@ -47,6 +47,15 @@ jobs:
       - name: Terraform validate
         run: terraform validate
 
+      - name: Terraform bootstrap format
+        run: terraform -chdir=terraform/bootstrap fmt -check
+
+      - name: Terraform bootstrap init
+        run: terraform -chdir=terraform/bootstrap init -backend=false
+
+      - name: Terraform bootstrap validate
+        run: terraform -chdir=terraform/bootstrap validate
+
       - name: Install Ansible collections
         run: ansible-galaxy collection install -r requirements.yml
 

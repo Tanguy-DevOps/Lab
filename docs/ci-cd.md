@@ -19,6 +19,7 @@ It checks:
 
 * Terraform formatting
 * Terraform validation
+* Terraform bootstrap formatting and validation
 * Ansible collection installation
 * Ansible linting
 * Ansible syntax

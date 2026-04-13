@@ -1,0 +1,14 @@
+terraform_state_bucket = "your-globally-unique-terraform-state-bucket"
+
+# Use the production environment trust policy because the manual deployment
+# workflow runs with environment: production.
+github_owner       = "Tanguy-DevOps"
+github_repo        = "Lab"
+github_environment = "production"
+
+# Set this to false if the AWS account already has the GitHub OIDC provider.
+create_github_oidc_provider = true
+
+tags = {
+  Owner = "tanguy"
+}

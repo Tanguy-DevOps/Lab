@@ -3,7 +3,7 @@
 ## Goal
 
 This document defines the minimum AWS access model for the current Terraform S3
-backend and the future Vault deployment.
+backend bootstrap and the future Vault deployment.
 
 The policies below are templates. Replace every placeholder before using them:
 
@@ -23,6 +23,8 @@ Current repository values:
 * Terraform state key: `serveurtest1/terraform.tfstate`
 * Terraform lockfile key: `serveurtest1/terraform.tfstate.tflock`
 * GitHub deployment environment: `production`
+
+The Terraform implementation lives in `terraform/bootstrap`.
 
 ## GitHub OIDC trust policy
 
@@ -175,7 +177,7 @@ The state bucket must have:
 * server-side encryption enabled,
 * no public bucket policy,
 * least-privilege bucket policy if a bucket policy is used,
-* lifecycle rules reviewed before deleting old versions,
+* lifecycle retention for old versions,
 * access logs or CloudTrail data events considered before production use.
 
 Do not enable force-delete style cleanup for this bucket. The state bucket is a
