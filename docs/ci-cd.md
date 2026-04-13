@@ -59,6 +59,8 @@ Create the AWS S3 bucket outside this Terraform stack before the first remote
 from public access. If you use SSE-KMS, the GitHub OIDC role must also be able
 to use the KMS key.
 
+The expected IAM and KMS policies are documented in `docs/aws-iam-kms.md`.
+
 Local setup:
 
 ```bash

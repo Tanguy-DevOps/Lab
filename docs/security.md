@@ -81,6 +81,9 @@ If SSE-KMS is enabled, the GitHub OIDC role needs the minimum KMS permissions
 required to read and write the state objects. The same AWS KMS approach is the
 preferred future default for Vault auto-unseal.
 
+Policy templates for the Terraform state role and the future Vault role are in
+`docs/aws-iam-kms.md`.
+
 ## Vault introduction plan
 
 Vault should be introduced in phases.
@@ -127,8 +130,6 @@ Do not move critical secrets into Vault until these checks are true:
 
 Recommended next steps:
 
-* Add an AWS IAM policy example for Terraform state access.
-* Add an AWS KMS policy example for future Vault auto-unseal.
 * Convert the Vault runbook into Terraform and Ansible tasks only after a
   restore drill has been designed.
 * Add container image scanning when the project starts building custom images.

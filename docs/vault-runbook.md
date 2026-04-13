@@ -44,6 +44,8 @@ Prepare these resources before deploying Vault:
 * IAM role or instance profile for the Vault node.
 * IAM policy allowing only the required KMS and S3 operations.
 
+Policy templates are documented in `docs/aws-iam-kms.md`.
+
 The KMS key is critical infrastructure. If the AWS KMS key used for auto-unseal
 is deleted or permanently unavailable, Vault may not be recoverable even if
 snapshots still exist. Protect it with deletion windows, restricted admins, and
