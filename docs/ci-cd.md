@@ -23,6 +23,8 @@ It checks:
 * Ansible linting
 * Ansible syntax
 * shell script syntax
+* secret scanning with Gitleaks
+* Terraform security scanning with Checkov
 
 The CI workflow does **not** deploy anything and initializes Terraform with
 `-backend=false`, so validation does not need AWS access.
@@ -150,5 +152,5 @@ Useful next steps:
 
 * protect the `production` environment with required reviewers
 * split Terraform, Ansible, and docs into dedicated folders
-* add security scanning for Terraform and container images
+* add security scanning for container images when container build artifacts exist
 * add the Vault recovery runbook described in `docs/security.md`

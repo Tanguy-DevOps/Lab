@@ -60,3 +60,43 @@ jobs:
         run: |
           bash -n deploy.sh
           bash -n destroy.sh
+
+  security:
+    name: Security Scans
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Secret scan
+        run: >
+          docker run --rm
+          -v "${PWD}:/repo"
+          ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+          detect
+          --source=/repo
+          --redact
+          --verbose
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Checkov
+        run: pip install checkov==3.2.508
+
+      - name: Terraform security scan
+        run: >
+          checkov -d .
+          --framework terraform
+          --skip-path collections
+          --skip-path .terraform
+          --skip-path .terraform-cache
+          --skip-download
+          --quiet

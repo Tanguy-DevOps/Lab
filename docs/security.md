@@ -37,6 +37,11 @@ Current Git ignore rules cover the main local risks:
 * generated Ansible inventory
 * downloaded Ansible collections
 
+CI also runs:
+
+* Gitleaks against the Git history to catch committed secrets.
+* Checkov against Terraform to catch infrastructure security issues early.
+
 ## GitHub Actions secrets
 
 These secrets are expected for the current deployment flow:
@@ -87,7 +92,8 @@ Phase 0: design and prerequisites
 * Decide whether Vault runs as a dedicated node first or later inside k3s.
 * Define the S3 snapshot destination and retention policy.
 * Define operator roles: `admin`, `ops`, `ci`, and later `app`.
-* Document recovery steps before storing critical secrets.
+* Follow the recovery procedure in `docs/vault-runbook.md` before storing
+  critical secrets.
 
 Phase 1: minimal Vault lab
 
@@ -121,8 +127,8 @@ Do not move critical secrets into Vault until these checks are true:
 
 Recommended next steps:
 
-* Add secret scanning to CI.
-* Add Terraform security scanning.
 * Add an AWS IAM policy example for Terraform state access.
 * Add an AWS KMS policy example for future Vault auto-unseal.
-* Add a Vault recovery runbook before deploying Vault.
+* Convert the Vault runbook into Terraform and Ansible tasks only after a
+  restore drill has been designed.
+* Add container image scanning when the project starts building custom images.
