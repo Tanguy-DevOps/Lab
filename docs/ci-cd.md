@@ -20,10 +20,12 @@ It checks:
 * Terraform formatting
 * Terraform validation
 * Ansible collection installation
+* Ansible linting
 * Ansible syntax
 * shell script syntax
 
-The CI workflow does **not** deploy anything.
+The CI workflow does **not** deploy anything and initializes Terraform with
+`-backend=false`, so validation does not need AWS access.
 
 ## What Manual CD does
 
@@ -34,12 +36,41 @@ It runs only when you start it manually from the GitHub Actions tab.
 It:
 
 * installs Terraform and Ansible
+* authenticates to AWS with GitHub Actions OIDC
+* writes a temporary Terraform S3 backend config for the remote state
 * writes a temporary `terraform.tfvars` file from GitHub secrets
-* runs `terraform apply`
+* runs `terraform plan`
+* runs `terraform apply` with the saved plan
 * waits for SSH to become reachable
 * runs the Ansible playbook
 
 It deploys only if you type `APPLY` in the manual form.
+
+## Terraform remote state
+
+Terraform uses a partial S3 backend configuration in the repository. The real
+backend values are supplied by `backend.hcl` locally or by GitHub Actions during
+deployment.
+
+Create the AWS S3 bucket outside this Terraform stack before the first remote
+`terraform init`. The bucket must be private, versioned, encrypted, and blocked
+from public access. If you use SSE-KMS, the GitHub OIDC role must also be able
+to use the KMS key.
+
+Local setup:
+
+```bash
+cp backend.hcl.example backend.hcl
+chmod 600 backend.hcl
+terraform init -backend-config=backend.hcl
+```
+
+Default backend values:
+
+* `region`: `eu-west-3`
+* `key`: `serveurtest1/terraform.tfstate`
+* `encrypt`: `true`
+* `use_lockfile`: `true`
 
 ## GitHub Secrets to create
 
@@ -57,6 +88,22 @@ Create these repository secrets:
 * `CERTBOT_EMAIL`
 * `SSH_ALLOWED_CIDR`
 * `SSH_PRIVATE_KEY`
+* `AWS_ROLE_TO_ASSUME`
+
+## GitHub variables to create
+
+In GitHub:
+
+`Settings` -> `Secrets and variables` -> `Actions` -> `Variables`
+
+Create these repository variables:
+
+* `TF_STATE_BUCKET`
+* `TF_STATE_KEY` (optional, defaults to `serveurtest1/terraform.tfstate`)
+* `TF_STATE_REGION` (optional, defaults to `eu-west-3`)
+
+`TF_STATE_BUCKET` may also be stored as a secret if you prefer not to expose the
+bucket name in repository variables.
 
 ## How to use CI
 
@@ -94,12 +141,14 @@ That means:
 * deployment happens from GitHub's temporary machine
 * your secrets must exist in GitHub Actions secrets
 * the SSH private key used by Ansible must match the public key sent to Hetzner
+* the current secrets model and Vault introduction plan are documented in
+  `docs/security.md`
 
 ## Next improvements
 
 Useful next steps:
 
-* add `terraform plan` as a separate manual or automatic job
-* add `ansible-lint`
 * protect the `production` environment with required reviewers
 * split Terraform, Ansible, and docs into dedicated folders
+* add security scanning for Terraform and container images
+* add the Vault recovery runbook described in `docs/security.md`

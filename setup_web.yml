@@ -6,19 +6,19 @@
   tasks:
 
     - name: Attendre que le serveur soit prêt
-      wait_for_connection:
+      ansible.builtin.wait_for_connection:
         delay: 10
         timeout: 120
 
     - name: Vérifier que cloud-init a fini
-      command: cloud-init status --wait
+      ansible.builtin.command: cloud-init status --wait
       changed_when: false
 
     # ─────────────────────────────────────────────────────────────
     # 1. DÉPENDANCES SYSTÈME
     # ─────────────────────────────────────────────────────────────
     - name: Mise à jour et installation des dépendances
-      apt:
+      ansible.builtin.apt:
         name:
           - apt-transport-https
           - ca-certificates
@@ -28,45 +28,48 @@
           - certbot
           - python3-docker
         state: present
-        update_cache: yes
+        update_cache: true
 
     # ─────────────────────────────────────────────────────────────
     # 2. INSTALLATION DOCKER ENGINE
     # ─────────────────────────────────────────────────────────────
 
     - name: Création du dossier keyrings
-      file:
+      ansible.builtin.file:
         path: /etc/apt/keyrings
         state: directory
         mode: "0755"
 
     - name: Ajout de la clé GPG Docker (méthode moderne)
-      get_url:
+      ansible.builtin.get_url:
         url: https://download.docker.com/linux/ubuntu/gpg
         dest: /etc/apt/keyrings/docker.asc
         mode: "0644"
         force: false
 
     - name: Ajout du dépôt Docker
-      apt_repository:
-        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_facts['distribution_release'] }} stable"
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc]
+          https://download.docker.com/linux/ubuntu
+          {{ ansible_facts['distribution_release'] }} stable
         state: present
         filename: docker
 
     - name: Installation de Docker
-      apt:
+      ansible.builtin.apt:
         name:
           - docker-ce
           - docker-ce-cli
           - containerd.io
           - docker-compose-plugin
         state: present
-        update_cache: yes
+        update_cache: true
 
     - name: Activation et démarrage du service Docker
-      systemd:
+      ansible.builtin.systemd:
         name: docker
-        enabled: yes
+        enabled: true
         state: started
 
     # ─────────────────────────────────────────────────────────────
@@ -74,19 +77,19 @@
     # ─────────────────────────────────────────────────────────────
 
     - name: Vérifier si le certificat existe déjà
-      stat:
+      ansible.builtin.stat:
         path: "/etc/letsencrypt/live/{{ public_domain }}/fullchain.pem"
       register: cert_fullchain
 
     - name: Arrêt du conteneur Nginx si existant (libère le port 80 pour Certbot)
-      command: docker stop site-tanguy
+      ansible.builtin.command: docker stop site-tanguy
       register: stop_result
       failed_when: false
       changed_when: stop_result.rc == 0
       when: not cert_fullchain.stat.exists
 
     - name: Vérifier que les variables de certificat sont définies
-      assert:
+      ansible.builtin.assert:
         that:
           - public_domain | length > 0
           - public_www_domain | length > 0
@@ -94,17 +97,18 @@
         fail_msg: "public_domain, public_www_domain et certbot_email doivent etre definis dans l'inventaire."
 
     - name: Génération du certificat SSL Let's Encrypt
-      command: >
+      ansible.builtin.command: >
         certbot certonly --standalone
         -d {{ public_domain }} -d {{ public_www_domain }}
         --non-interactive --agree-tos --email {{ certbot_email }}
         {{ '--test-cert' if (certbot_staging | default(false) | bool) else '' }}
       register: certbot_log
+      changed_when: certbot_log.rc == 0
       failed_when: certbot_log.rc != 0 and 'already exists' not in certbot_log.stderr
       when: not cert_fullchain.stat.exists
 
     - name: Expliquer le blocage Let’s Encrypt en cas de rate limit
-      fail:
+      ansible.builtin.fail:
         msg: >-
           Let’s Encrypt a refuse un nouveau certificat de production pour
           {{ public_domain }} / {{ public_www_domain }} a cause d'une rate limit.
@@ -117,7 +121,7 @@
         - "'too many certificates' in certbot_log.stderr"
 
     - name: Installer le hook pre-renew Certbot
-      copy:
+      ansible.builtin.copy:
         dest: /usr/local/bin/certbot-pre-hook.sh
         owner: root
         group: root
@@ -131,7 +135,7 @@
           fi
 
     - name: Installer le hook post-renew Certbot
-      copy:
+      ansible.builtin.copy:
         dest: /usr/local/bin/certbot-post-hook.sh
         owner: root
         group: root
@@ -149,7 +153,7 @@
           fi
 
     - name: Cron de renouvellement automatique Let's Encrypt (2x/jour)
-      cron:
+      ansible.builtin.cron:
         name: "Certbot renew"
         minute: "0"
         hour: "3,15"
@@ -165,7 +169,7 @@
     # ─────────────────────────────────────────────────────────────
 
     - name: Création des dossiers du projet
-      file:
+      ansible.builtin.file:
         path: "/home/{{ ansible_user }}/mon-site/{{ item }}"
         state: directory
         owner: "{{ ansible_user }}"
@@ -176,7 +180,7 @@
         - config
 
     - name: Déploiement de l'index.html (Template)
-      template:
+      ansible.builtin.template:
         src: templates/index.html.j2
         dest: "/home/{{ ansible_user }}/mon-site/html/index.html"
         owner: "{{ ansible_user }}"
@@ -184,7 +188,7 @@
         mode: "0644"
 
     - name: Déploiement de la configuration Nginx SSL
-      copy:
+      ansible.builtin.copy:
         dest: "/home/{{ ansible_user }}/mon-site/config/nginx.conf"
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
@@ -228,7 +232,7 @@
         image: nginx:alpine
         state: started
         restart_policy: always
-        recreate: yes
+        recreate: true
         published_ports:
           - "80:80"
           - "443:443"

@@ -53,6 +53,7 @@ command -v nc               || error "nc (netcat) n'est pas installé"
 [ -f "requirements.yml" ]        || error "requirements.yml introuvable"
 [ -f "inventory/hosts.ini.tpl" ] || error "inventory/hosts.ini.tpl introuvable"
 [ -f "terraform.tfvars" ]        || error "terraform.tfvars introuvable — cree-le a partir de terraform.tfvars.example"
+[ -f "backend.hcl" ]             || error "backend.hcl introuvable — cree-le a partir de backend.hcl.example"
 
 require_file_permissions "terraform.tfvars" "600"
 
@@ -70,13 +71,16 @@ terraform fmt -check
 # 1. TERRAFORM
 # ─────────────────────────────────────────────
 log "Initialisation Terraform..."
-terraform init -upgrade
+terraform init -upgrade -backend-config=backend.hcl
 terraform validate
 
 confirm_apply
 
+log "Plan Terraform..."
+terraform plan -out=tfplan
+
 log "Application Terraform (création serveur + DNS + inventaire)..."
-terraform apply
+terraform apply tfplan
 
 [ -f "inventory/hosts.ini" ] || error "inventory/hosts.ini n'a pas été généré par Terraform"
 log "Inventaire Ansible généré :"

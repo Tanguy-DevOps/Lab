@@ -19,6 +19,14 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.inputs.confirm_apply == 'APPLY'
     environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET || secrets.TF_STATE_BUCKET }}
+      TF_STATE_KEY: ${{ vars.TF_STATE_KEY || 'serveurtest1/terraform.tfstate' }}
+      TF_STATE_REGION: ${{ vars.TF_STATE_REGION || 'eu-west-3' }}
 
     steps:
       - name: Checkout repository
@@ -36,6 +44,20 @@ jobs:
 
       - name: Install Ansible
         run: pip install ansible-core
+
+      - name: Configure AWS credentials for Terraform state
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          role-session-name: github-actions-terraform-state
+          aws-region: ${{ env.TF_STATE_REGION }}
+
+      - name: Validate Terraform backend inputs
+        run: |
+          test -n "${AWS_ROLE_TO_ASSUME}"
+          test -n "${TF_STATE_BUCKET}"
+          test -n "${TF_STATE_KEY}"
+          test -n "${TF_STATE_REGION}"
 
       - name: Install system tools
         run: |
@@ -75,17 +97,31 @@ jobs:
           EOF
           chmod 600 terraform.tfvars
 
+      - name: Write Terraform backend config
+        run: |
+          cat > backend.hcl <<EOF
+          bucket       = "${TF_STATE_BUCKET}"
+          key          = "${TF_STATE_KEY}"
+          region       = "${TF_STATE_REGION}"
+          encrypt      = true
+          use_lockfile = true
+          EOF
+          chmod 600 backend.hcl
+
       - name: Terraform format
         run: terraform fmt -check
 
       - name: Terraform init
-        run: terraform init
+        run: terraform init -backend-config=backend.hcl
 
       - name: Terraform validate
         run: terraform validate
 
+      - name: Terraform plan
+        run: terraform plan -out=tfplan
+
       - name: Terraform apply
-        run: terraform apply -auto-approve
+        run: terraform apply -auto-approve tfplan
 
       - name: Show generated inventory
         run: cat inventory/hosts.ini

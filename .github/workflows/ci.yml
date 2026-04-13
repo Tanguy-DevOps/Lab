@@ -15,6 +15,8 @@ jobs:
   validate:
     name: Validate Terraform, Ansible and Shell
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
@@ -31,7 +33,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install Ansible
-        run: pip install ansible-core
+        run: pip install ansible-core ansible-lint
 
       - name: Prepare Terraform variable file for validation
         run: cp terraform.tfvars.example terraform.tfvars
@@ -47,6 +49,9 @@ jobs:
 
       - name: Install Ansible collections
         run: ansible-galaxy collection install -r requirements.yml
+
+      - name: Ansible lint
+        run: ansible-lint setup_web.yml
 
       - name: Ansible syntax check
         run: ansible-playbook --syntax-check setup_web.yml

@@ -35,12 +35,13 @@ command -v terraform || error "terraform n'est pas installe"
 
 [ -f "main.tf" ] || error "main.tf introuvable — lance ce script depuis la racine du projet"
 [ -f "terraform.tfvars" ] || error "terraform.tfvars introuvable"
+[ -f "backend.hcl" ] || error "backend.hcl introuvable — cree-le a partir de backend.hcl.example"
 
 require_file_permissions "terraform.tfvars" "600"
 
 log "Verification Terraform..."
 terraform fmt -check
-terraform init -upgrade
+terraform init -upgrade -backend-config=backend.hcl
 terraform validate
 
 confirm_destroy

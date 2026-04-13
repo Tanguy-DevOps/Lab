@@ -1,11 +1,15 @@
 # .gitignore
 *.tfstate
 *.tfstate.backup
+tfplan
+*.tfplan
 .terraform/
 terraform.tfvars
+backend.hcl
 *.auto.tfvars
 *.auto.tfvars.json
 .env
 inventory/hosts.ini
+collections/
 
 .terraform-cache/
