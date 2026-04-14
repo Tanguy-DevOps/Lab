@@ -41,10 +41,11 @@ terraform plan -out=tfplan
 terraform apply tfplan
 ```
 
-Then use the outputs to configure GitHub Actions and the root backend:
+Then synchronize the root backend and print the exact GitHub values:
 
 ```bash
-terraform output
+cd ../..
+./scripts/sync-backend-from-bootstrap.sh
 ```
 
 Expected GitHub values:
@@ -63,6 +64,8 @@ region       = "eu-west-3"
 encrypt      = true
 use_lockfile = true
 ```
+
+The script writes `backend.hcl` at the repository root with `0600` permissions.
 
 ## Safety
 

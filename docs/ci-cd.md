@@ -65,8 +65,7 @@ The expected IAM and KMS policies are documented in `docs/aws-iam-kms.md`.
 Local setup:
 
 ```bash
-cp backend.hcl.example backend.hcl
-chmod 600 backend.hcl
+./scripts/sync-backend-from-bootstrap.sh
 terraform init -backend-config=backend.hcl
 ```
 
@@ -76,6 +75,10 @@ Default backend values:
 * `key`: `serveurtest1/terraform.tfstate`
 * `encrypt`: `true`
 * `use_lockfile`: `true`
+
+The sync script reads outputs from `terraform/bootstrap`, writes `backend.hcl`,
+and prints the exact GitHub values for `AWS_ROLE_TO_ASSUME`, `TF_STATE_BUCKET`,
+`TF_STATE_KEY`, and `TF_STATE_REGION`.
 
 ## GitHub Secrets to create
 
