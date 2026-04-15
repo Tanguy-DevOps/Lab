@@ -44,6 +44,18 @@ Prepare these resources before deploying Vault:
 * IAM role or instance profile for the Vault node.
 * IAM policy allowing only the required KMS and S3 operations.
 
+This repository can now provision those prerequisites from
+`terraform/bootstrap` when `enable_vault_prerequisites=true`.
+
+Expected Terraform bootstrap outputs for Vault wiring:
+
+* `vault_auto_unseal_kms_key_arn`
+* `vault_snapshot_bucket`
+* `vault_snapshot_prefix`
+* `vault_snapshot_kms_key_arn`
+* `vault_node_role_arn`
+* `vault_node_instance_profile_name`
+
 Policy templates are documented in `docs/aws-iam-kms.md`.
 
 The KMS key is critical infrastructure. If the AWS KMS key used for auto-unseal

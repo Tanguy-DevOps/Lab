@@ -1,4 +1,5 @@
-terraform_state_bucket = "your-globally-unique-terraform-state-bucket"
+# Must be globally unique and lowercase (letters/numbers/hyphens only).
+terraform_state_bucket = "lab-terraform-state-1234567890"
 
 # Use the production environment trust policy because the manual deployment
 # workflow runs with environment: production.
@@ -8,6 +9,20 @@ github_environment = "production"
 
 # Set this to false if the AWS account already has the GitHub OIDC provider.
 create_github_oidc_provider = true
+
+# Optional Phase 1 Vault prerequisites.
+# Keep disabled until you are ready to create the dedicated Vault AWS resources.
+enable_vault_prerequisites = false
+
+# Required when enable_vault_prerequisites=true.
+# Must be globally unique and lowercase (letters/numbers/hyphens only).
+# vault_snapshot_bucket = "lab-vault-snapshots-1234567890"
+
+# Optional tuning for Vault snapshot storage.
+# vault_snapshot_prefix                  = "vault/raft"
+# enable_vault_snapshot_kms_encryption  = true
+# vault_kms_deletion_window_in_days     = 30
+# noncurrent_vault_snapshot_retention_days = 180
 
 tags = {
   Owner = "tanguy"

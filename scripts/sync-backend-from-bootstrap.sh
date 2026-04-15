@@ -17,6 +17,10 @@ BACKEND_FILE="${ROOT_DIR}/backend.hcl"
 command -v terraform >/dev/null || error "terraform n'est pas installe"
 [ -d "${BOOTSTRAP_DIR}" ] || error "dossier bootstrap introuvable: ${BOOTSTRAP_DIR}"
 
+if ! terraform -chdir="${BOOTSTRAP_DIR}" state list 2>/dev/null | grep -qx "aws_s3_bucket.terraform_state"; then
+  error "Le bucket S3 du state n'est pas present dans le state bootstrap. Corrige et applique d'abord: terraform -chdir=terraform/bootstrap apply"
+fi
+
 log "Lecture des outputs Terraform bootstrap..."
 if ! terraform_state_bucket="$(terraform -chdir="${BOOTSTRAP_DIR}" output -raw terraform_state_bucket 2>/dev/null)"; then
   error "Impossible de lire les outputs bootstrap. Lance d'abord: terraform -chdir=terraform/bootstrap init && terraform -chdir=terraform/bootstrap apply"
@@ -26,6 +30,10 @@ terraform_state_key="$(terraform -chdir="${BOOTSTRAP_DIR}" output -raw terraform
 terraform_state_region="$(terraform -chdir="${BOOTSTRAP_DIR}" output -raw terraform_state_region)"
 github_actions_role_arn="$(terraform -chdir="${BOOTSTRAP_DIR}" output -raw github_actions_role_arn)"
 github_oidc_subject="$(terraform -chdir="${BOOTSTRAP_DIR}" output -raw github_oidc_subject)"
+
+if ! [[ "${terraform_state_bucket}" =~ ^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$ ]]; then
+  error "Le bucket output '${terraform_state_bucket}' est invalide pour S3. Utilise un nom en minuscules, chiffres et tirets."
+fi
 
 log "Generation de backend.hcl a la racine du projet..."
 cat > "${BACKEND_FILE}" <<EOF

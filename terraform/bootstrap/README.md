@@ -12,6 +12,11 @@ It manages:
 * GitHub Actions OIDC provider.
 * IAM role used by GitHub Actions.
 * Least-privilege S3 and KMS policies for the state file and `.tflock`.
+* Optional Vault prerequisites:
+  * KMS key for Vault auto-unseal.
+  * Private S3 bucket for Vault Raft snapshots.
+  * Optional dedicated KMS key for Vault snapshot encryption.
+  * IAM role and instance profile for a Vault node (auto-unseal + snapshot access).
 
 ## Why this is separate
 
@@ -31,13 +36,38 @@ chmod 600 terraform.tfvars
 
 Edit `terraform.tfvars` and choose a globally unique S3 bucket name.
 
-Run the bootstrap:
+If you want to create Vault prerequisites in the same bootstrap run, set:
+
+```hcl
+enable_vault_prerequisites = true
+vault_snapshot_bucket      = "<globally-unique-vault-snapshot-bucket>"
+```
+
+Recommended first pass: keep `enable_vault_prerequisites = false`, validate the
+Terraform backend migration, then enable Vault resources in a dedicated apply.
+
+Run the bootstrap with the project script (recommended):
 
 ```bash
+cd ../..
+./scripts/bootstrap-aws-foundation.sh
+```
+
+This script enforces:
+
+* required local file `terraform/bootstrap/terraform.tfvars`,
+* strict file permissions (`0600`),
+* non-interactive Terraform plan (`-input=false`),
+* backend synchronization after a successful apply.
+
+Manual commands (advanced):
+
+```bash
+cd terraform/bootstrap
 terraform init
 terraform fmt -check
 terraform validate
-terraform plan -out=tfplan
+terraform plan -input=false -var-file=terraform.tfvars -out=tfplan
 terraform apply tfplan
 ```
 
@@ -54,6 +84,15 @@ Expected GitHub values:
 * `TF_STATE_BUCKET`: `terraform_state_bucket`
 * `TF_STATE_KEY`: `terraform_state_key`
 * `TF_STATE_REGION`: `terraform_state_region`
+
+When Vault prerequisites are enabled, useful outputs are:
+
+* `vault_auto_unseal_kms_key_arn`
+* `vault_snapshot_bucket`
+* `vault_snapshot_prefix`
+* `vault_snapshot_kms_key_arn`
+* `vault_node_role_arn`
+* `vault_node_instance_profile_name`
 
 Expected root `backend.hcl`:
 

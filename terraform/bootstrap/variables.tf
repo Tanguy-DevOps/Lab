@@ -21,8 +21,11 @@ variable "terraform_state_bucket" {
   type        = string
 
   validation {
-    condition     = length(var.terraform_state_bucket) >= 3 && length(var.terraform_state_bucket) <= 63
-    error_message = "terraform_state_bucket must be a valid S3 bucket name length."
+    condition = can(regex(
+      "^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$",
+      var.terraform_state_bucket
+    ))
+    error_message = "terraform_state_bucket must be 3-63 chars, lowercase letters/numbers/hyphens only, and cannot start or end with a hyphen."
   }
 }
 
@@ -100,6 +103,70 @@ variable "github_actions_role_name" {
   description = "IAM role name assumed by GitHub Actions for Terraform state access."
   type        = string
   default     = "serveurtest1-github-actions-terraform-state"
+}
+
+variable "enable_vault_prerequisites" {
+  description = "Create AWS prerequisites for a first Vault lab deployment (KMS auto-unseal, snapshot bucket, Vault node IAM role)."
+  type        = bool
+  default     = false
+}
+
+variable "vault_snapshot_bucket" {
+  description = "Globally unique S3 bucket name for Vault Raft snapshots."
+  type        = string
+  default     = null
+
+  validation {
+    condition = var.vault_snapshot_bucket == null || can(regex(
+      "^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$",
+      var.vault_snapshot_bucket
+    ))
+    error_message = "vault_snapshot_bucket must be 3-63 chars, lowercase letters/numbers/hyphens only, and cannot start or end with a hyphen."
+  }
+
+  validation {
+    condition     = !var.enable_vault_prerequisites || var.vault_snapshot_bucket != null
+    error_message = "vault_snapshot_bucket is required when enable_vault_prerequisites=true."
+  }
+}
+
+variable "vault_snapshot_prefix" {
+  description = "S3 prefix used to store Vault Raft snapshots."
+  type        = string
+  default     = "vault/raft"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9/_-]*[A-Za-z0-9]$", var.vault_snapshot_prefix))
+    error_message = "vault_snapshot_prefix must contain only letters, numbers, slash, underscore, or hyphen, and cannot start or end with a slash."
+  }
+}
+
+variable "enable_vault_snapshot_kms_encryption" {
+  description = "Use a dedicated customer-managed KMS key for Vault snapshot bucket encryption."
+  type        = bool
+  default     = true
+}
+
+variable "vault_kms_deletion_window_in_days" {
+  description = "Waiting period before deleting Vault KMS keys."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.vault_kms_deletion_window_in_days >= 7 && var.vault_kms_deletion_window_in_days <= 30
+    error_message = "vault_kms_deletion_window_in_days must be between 7 and 30."
+  }
+}
+
+variable "noncurrent_vault_snapshot_retention_days" {
+  description = "Number of days to retain noncurrent Vault snapshot object versions."
+  type        = number
+  default     = 180
+
+  validation {
+    condition     = var.noncurrent_vault_snapshot_retention_days >= 30
+    error_message = "noncurrent_vault_snapshot_retention_days must be at least 30."
+  }
 }
 
 variable "tags" {

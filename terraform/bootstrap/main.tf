@@ -24,6 +24,10 @@ locals {
   github_oidc_hostpath   = replace(var.github_oidc_provider_url, "https://", "")
   github_subject         = var.github_environment != "" ? "repo:${local.github_repository}:environment:${var.github_environment}" : "repo:${local.github_repository}:ref:refs/heads/${var.github_branch}"
   terraform_lockfile_key = "${var.terraform_state_key}.tflock"
+  vault_snapshot_prefix  = trimsuffix(var.vault_snapshot_prefix, "/")
+  vault_snapshot_glob    = "${local.vault_snapshot_prefix}/*"
+  vault_node_role_name   = "${var.project_name}-vault-node"
+  vault_node_profile     = "${var.project_name}-vault-node"
 
   tags = merge(
     {
@@ -326,4 +330,314 @@ resource "aws_iam_role_policy_attachment" "terraform_state_kms_access" {
 
   role       = aws_iam_role.github_actions_terraform_state.name
   policy_arn = aws_iam_policy.terraform_state_kms_access[0].arn
+}
+
+data "aws_iam_policy_document" "vault_auto_unseal_kms_key" {
+  #checkov:skip=CKV_AWS_109:KMS key policies use Resource "*" because the key policy is attached to the key itself.
+  #checkov:skip=CKV_AWS_111:KMS key admin delegation is scoped to the account root principal for IAM policy enablement.
+  #checkov:skip=CKV_AWS_356:KMS key policies require Resource "*" for statements attached directly to the key.
+  count = var.enable_vault_prerequisites ? 1 : 0
+
+  statement {
+    sid    = "EnableIamPermissions"
+    effect = "Allow"
+
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+
+    actions   = ["kms:*"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_kms_key" "vault_auto_unseal" {
+  count = var.enable_vault_prerequisites ? 1 : 0
+
+  description             = "KMS key for ${var.project_name} Vault auto-unseal"
+  deletion_window_in_days = var.vault_kms_deletion_window_in_days
+  enable_key_rotation     = true
+  policy                  = data.aws_iam_policy_document.vault_auto_unseal_kms_key[0].json
+}
+
+resource "aws_kms_alias" "vault_auto_unseal" {
+  count = var.enable_vault_prerequisites ? 1 : 0
+
+  name          = "alias/${var.project_name}-vault-auto-unseal"
+  target_key_id = aws_kms_key.vault_auto_unseal[0].key_id
+}
+
+data "aws_iam_policy_document" "vault_snapshot_kms_key" {
+  #checkov:skip=CKV_AWS_109:KMS key policies use Resource "*" because the key policy is attached to the key itself.
+  #checkov:skip=CKV_AWS_111:KMS key admin delegation is scoped to the account root principal for IAM policy enablement.
+  #checkov:skip=CKV_AWS_356:KMS key policies require Resource "*" for statements attached directly to the key.
+  count = var.enable_vault_prerequisites && var.enable_vault_snapshot_kms_encryption ? 1 : 0
+
+  statement {
+    sid    = "EnableIamPermissions"
+    effect = "Allow"
+
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+
+    actions   = ["kms:*"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_kms_key" "vault_snapshot" {
+  count = var.enable_vault_prerequisites && var.enable_vault_snapshot_kms_encryption ? 1 : 0
+
+  description             = "KMS key for ${var.project_name} Vault snapshot encryption"
+  deletion_window_in_days = var.vault_kms_deletion_window_in_days
+  enable_key_rotation     = true
+  policy                  = data.aws_iam_policy_document.vault_snapshot_kms_key[0].json
+}
+
+resource "aws_kms_alias" "vault_snapshot" {
+  count = var.enable_vault_prerequisites && var.enable_vault_snapshot_kms_encryption ? 1 : 0
+
+  name          = "alias/${var.project_name}-vault-snapshot"
+  target_key_id = aws_kms_key.vault_snapshot[0].key_id
+}
+
+resource "aws_s3_bucket" "vault_snapshots" {
+  #checkov:skip=CKV_AWS_18:Access logging requires a dedicated log bucket; add it in the next AWS hardening pass.
+  #checkov:skip=CKV_AWS_144:Cross-region replication is intentionally deferred for this cost-minimal lab bootstrap.
+  #checkov:skip=CKV_AWS_145:KMS encryption is configured by aws_s3_bucket_server_side_encryption_configuration when enable_vault_snapshot_kms_encryption=true.
+  #checkov:skip=CKV2_AWS_62:Event notifications are not needed until backup automation consumes snapshot bucket events.
+  count = var.enable_vault_prerequisites ? 1 : 0
+
+  bucket        = var.vault_snapshot_bucket
+  force_destroy = false
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "vault_snapshots" {
+  count = var.enable_vault_prerequisites ? 1 : 0
+
+  bucket = aws_s3_bucket.vault_snapshots[0].id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_versioning" "vault_snapshots" {
+  count = var.enable_vault_prerequisites ? 1 : 0
+
+  bucket = aws_s3_bucket.vault_snapshots[0].id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "vault_snapshots" {
+  count = var.enable_vault_prerequisites ? 1 : 0
+
+  bucket = aws_s3_bucket.vault_snapshots[0].id
+
+  rule {
+    id     = "retain-noncurrent-vault-snapshots"
+    status = "Enabled"
+
+    filter {
+      prefix = local.vault_snapshot_prefix
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+
+    noncurrent_version_expiration {
+      noncurrent_days = var.noncurrent_vault_snapshot_retention_days
+    }
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "vault_snapshots_kms" {
+  count = var.enable_vault_prerequisites && var.enable_vault_snapshot_kms_encryption ? 1 : 0
+
+  bucket = aws_s3_bucket.vault_snapshots[0].id
+
+  rule {
+    bucket_key_enabled = true
+
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = aws_kms_key.vault_snapshot[0].arn
+      sse_algorithm     = "aws:kms"
+    }
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "vault_snapshots_aes" {
+  count = var.enable_vault_prerequisites && var.enable_vault_snapshot_kms_encryption ? 0 : (var.enable_vault_prerequisites ? 1 : 0)
+
+  bucket = aws_s3_bucket.vault_snapshots[0].id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+data "aws_iam_policy_document" "vault_snapshot_bucket" {
+  count = var.enable_vault_prerequisites ? 1 : 0
+
+  statement {
+    sid    = "DenyInsecureTransport"
+    effect = "Deny"
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+
+    actions = ["s3:*"]
+
+    resources = [
+      aws_s3_bucket.vault_snapshots[0].arn,
+      "${aws_s3_bucket.vault_snapshots[0].arn}/*",
+    ]
+
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "vault_snapshots" {
+  count = var.enable_vault_prerequisites ? 1 : 0
+
+  bucket = aws_s3_bucket.vault_snapshots[0].id
+  policy = data.aws_iam_policy_document.vault_snapshot_bucket[0].json
+}
+
+data "aws_iam_policy_document" "vault_node_assume_role" {
+  count = var.enable_vault_prerequisites ? 1 : 0
+
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "vault_node" {
+  count = var.enable_vault_prerequisites ? 1 : 0
+
+  name               = local.vault_node_role_name
+  assume_role_policy = data.aws_iam_policy_document.vault_node_assume_role[0].json
+  description        = "Vault node role for auto-unseal and Raft snapshot backup/restore"
+}
+
+resource "aws_iam_instance_profile" "vault_node" {
+  count = var.enable_vault_prerequisites ? 1 : 0
+
+  name = local.vault_node_profile
+  role = aws_iam_role.vault_node[0].name
+}
+
+data "aws_iam_policy_document" "vault_node_access" {
+  count = var.enable_vault_prerequisites ? 1 : 0
+
+  statement {
+    sid    = "VaultAutoUnseal"
+    effect = "Allow"
+
+    actions = [
+      "kms:Encrypt",
+      "kms:Decrypt",
+      "kms:DescribeKey",
+    ]
+
+    resources = [aws_kms_key.vault_auto_unseal[0].arn]
+  }
+
+  statement {
+    sid       = "ListVaultSnapshotPrefix"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.vault_snapshots[0].arn]
+
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values = [
+        local.vault_snapshot_prefix,
+        local.vault_snapshot_glob,
+      ]
+    }
+  }
+
+  statement {
+    sid    = "ReadWriteVaultSnapshots"
+    effect = "Allow"
+
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+    ]
+
+    resources = ["${aws_s3_bucket.vault_snapshots[0].arn}/${local.vault_snapshot_glob}"]
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_vault_snapshot_kms_encryption ? [1] : []
+
+    content {
+      sid    = "UseVaultSnapshotKmsKeyThroughS3"
+      effect = "Allow"
+
+      actions = [
+        "kms:Decrypt",
+        "kms:DescribeKey",
+        "kms:GenerateDataKey",
+      ]
+
+      resources = [aws_kms_key.vault_snapshot[0].arn]
+
+      condition {
+        test     = "StringEquals"
+        variable = "kms:ViaService"
+        values   = ["s3.${var.aws_region}.amazonaws.com"]
+      }
+
+      condition {
+        test     = "StringLike"
+        variable = "kms:EncryptionContext:aws:s3:arn"
+        values   = ["${aws_s3_bucket.vault_snapshots[0].arn}/${local.vault_snapshot_glob}"]
+      }
+    }
+  }
+}
+
+resource "aws_iam_policy" "vault_node_access" {
+  count = var.enable_vault_prerequisites ? 1 : 0
+
+  name        = "${var.project_name}-vault-node-access"
+  description = "Least-privilege access for Vault auto-unseal and Raft snapshot backup/restore"
+  policy      = data.aws_iam_policy_document.vault_node_access[0].json
+}
+
+resource "aws_iam_role_policy_attachment" "vault_node_access" {
+  count = var.enable_vault_prerequisites ? 1 : 0
+
+  role       = aws_iam_role.vault_node[0].name
+  policy_arn = aws_iam_policy.vault_node_access[0].arn
 }

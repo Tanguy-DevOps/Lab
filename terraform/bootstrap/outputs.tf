@@ -43,3 +43,33 @@ output "backend_hcl" {
     use_lockfile = true
   }
 }
+
+output "vault_snapshot_bucket" {
+  description = "S3 bucket name for Vault Raft snapshots when Vault prerequisites are enabled."
+  value       = var.enable_vault_prerequisites ? aws_s3_bucket.vault_snapshots[0].bucket : null
+}
+
+output "vault_snapshot_prefix" {
+  description = "S3 prefix used for Vault Raft snapshots."
+  value       = var.enable_vault_prerequisites ? local.vault_snapshot_prefix : null
+}
+
+output "vault_auto_unseal_kms_key_arn" {
+  description = "KMS key ARN used for Vault auto-unseal."
+  value       = var.enable_vault_prerequisites ? aws_kms_key.vault_auto_unseal[0].arn : null
+}
+
+output "vault_snapshot_kms_key_arn" {
+  description = "KMS key ARN used for Vault snapshot bucket encryption when enabled."
+  value       = var.enable_vault_prerequisites && var.enable_vault_snapshot_kms_encryption ? aws_kms_key.vault_snapshot[0].arn : null
+}
+
+output "vault_node_role_arn" {
+  description = "IAM role ARN for the Vault node instance profile."
+  value       = var.enable_vault_prerequisites ? aws_iam_role.vault_node[0].arn : null
+}
+
+output "vault_node_instance_profile_name" {
+  description = "Instance profile name to attach to the Vault node."
+  value       = var.enable_vault_prerequisites ? aws_iam_instance_profile.vault_node[0].name : null
+}
